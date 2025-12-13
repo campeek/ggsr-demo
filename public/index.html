@@ -57,9 +57,26 @@
     let lastHotTime = 0;
     let rafId = null;
 
-    let smoothed = 0;
+    /*let smoothed = 0;
     const attack = 0.35;
     const release = 0.08;
+     */
+
+    let smoothedBot = 0;
+    let smoothedTop = 0;
+
+    let t0 = performance.now();
+
+    const attackBot = 0.45;
+    const releaseBot = 0.10;
+
+    const attackTop = 0.22;
+    const releaseTop = 0.06;
+
+    // breathing params
+    const breathSpeed = 0.4; // lower = slower
+    const breathAmount = 0.25;
+    const breathFloor = 0.004;
 
     function clamp01(x){
         return Math.max(0, Math.min(1,x));
@@ -67,6 +84,11 @@
 
     function shape(x){
         return Math.pow(x, 0.6);
+    }
+
+    function follow(prev, target, a, r){
+        const k = (target > prev) ? a : r;
+        return prev + (target - prev) * k;
     }
 
     function setRingOpacities(top, bot){
@@ -151,33 +173,48 @@
                 const rms = Math.sqrt(sum/dataArray.length);
                 const level = rms * 100;
 
-                const floor = 0.01;
-                const ceil = 0.12;
+                const floor = 0.01; // silence
+                const ceil = 0.12;  // "loud enough"
+
                 let amp = (rms-floor) / (ceil-floor);
                 amp = clamp01(amp);
                 amp = shape(amp);
 
-                const k = (amp > smoothed) ? attack : release;
-                smoothed = smoothed + (amp - smoothed) * k;
+                smoothedBot = follow(smoothedBot, amp, attackBot, releaseBot);
+                smoothedTop = follow(smoothedTop, amp, attackTop, releaseTop);
 
-                const botBase = connected ? 0.55 : 0.0;
+                const now = performance.now();
+                const dt = (now - t0) / 1000;
+                t0 = now;
+
+                let breath = 0;
+                if(amp < breathFloor){
+                    const s = (Math.sin(2*Math.PI * breathSpeed * now / 1000) + 1) / 2;
+                    breath = s * breathAmount;
+                }
+
+                const botBase = connected ? 0.42 : 0.0;
                 const botMax = 0.95;
                 const topMax = 0.95;
 
-                const top = smoothed * topMax;
-                const bot = clamp01(botBase + smoothed * (botMax - botBase));
+                let botOpacity = botBase + smoothedBot * (botMax - botBase) + breath * 1.2;
+                let topOpacity = (smoothedTop > 0.02)
+                                    ? (smoothedTop * topMax + breath * 0.25)
+                                    : 0;
 
-                setRingOpacities(top, bot);
+                botOpacity = clamp01(botOpacity);
+                topOpacity = clamp01(topOpacity);
 
-                const now = performance.now();
-                if (level > threshold) lastHotTime = now;
+                setRingOpacities(topOpacity, botOpacity);
+
+                /*if (level > threshold) lastHotTime = now;
 
                 const playing = (now - lastHotTime) < speakHoldMs;
 
                 if(playing !== audioPlaying){
                     audioPlaying = playing;
                     renderRings();
-                }
+                }*/
 
                 rafId = requestAnimationFrame(tick);
             };
