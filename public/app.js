@@ -1,0 +1,355 @@
+const curatorEl = document.getElementById('curator');
+const statusEl = document.getElementById('status');
+const logEl = document.getElementById('log');
+
+const btnConnect = document.getElementById('connect');
+const btnDisconnect = document.getElementById('disconnect');
+const btnHold = document.getElementById('hold');
+const btnSend = document.getElementById('send');
+const textEl = document.getElementById('text');
+
+let pc, dc, localStream, micTrack, audioEl;
+let connected = false;
+
+let modelSpeaking = false;
+let audioPlaying = false;
+
+let audioCtx, analyzer, dataArray;
+let speakHoldMs = 250;
+let lastHotTime = 0;
+let rafId = null;
+
+/*let smoothed = 0;
+const attack = 0.35;
+const release = 0.08;
+ */
+
+let smoothedBot = 0;
+let smoothedTop = 0;
+
+let t0 = performance.now();
+
+const attackBot = 0.45;
+const releaseBot = 0.10;
+
+const attackTop = 0.22;
+const releaseTop = 0.06;
+
+// breathing params
+const breathSpeed = 0.4; // lower = slower
+const breathAmount = 0.25;
+const breathFloor = 0.004;
+
+function clamp01(x){
+    return Math.max(0, Math.min(1,x));
+}
+
+function shape(x){
+    return Math.pow(x, 0.6);
+}
+
+function follow(prev, target, a, r){
+    const k = (target > prev) ? a : r;
+    return prev + (target - prev) * k;
+}
+
+function setRingOpacities(top, bot){
+    curatorEl.style.setProperty('--topOpacity', top.toFixed(3));
+    curatorEl.style.setProperty('--botOpacity', bot.toFixed(3));
+}
+
+function renderRings(){
+    if(!connected) return setState("idle");
+    if(audioPlaying) return setState("speaking");
+    return setState("listening");
+}
+
+function setState(s) {
+    curatorEl.classList.remove('idle','speaking','listening');
+    curatorEl.classList.add(s);
+    statusEl.textContent =
+        s === 'speaking' ? 'Speaking (2 rings)' :
+            s === 'listening' ? 'Listening (1 ring)' : 'Idle (0 rings)';
+}
+
+function log(line, muted=false) {
+    const div = document.createElement('div');
+    div.textContent = line;
+    if (muted) div.className = 'muted';
+    div.style.margin = '8px 0';
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function connect() {
+    // WebRTC peer connection + remote audio playback (matches docs pattern) :contentReference[oaicite:4]{index=4}
+    pc = new RTCPeerConnection();
+
+    audioEl = document.createElement('audio');
+    audioEl.autoplay = true;
+
+    audioEl.addEventListener("play", () => {
+        audioPlaying=true;
+        renderRings();
+    });
+    audioEl.addEventListener("ended", () => {
+        audioPlaying=false;
+        renderRings();
+    });
+    audioEl.addEventListener("pause", () =>{
+        audioPlaying=false;
+        renderRings();
+    });
+
+    pc.ontrack = (e) => {
+        const remoteStream = e.streams[0];
+        audioEl.srcObject = remoteStream;
+
+        if(!audioCtx){
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        if(audioCtx.state === "suspended") audioCtx.resume();
+
+        const source = audioCtx.createMediaStreamSource(remoteStream);
+        analyzer = audioCtx.createAnalyser();
+        analyzer.fftSize = 2048;
+        dataArray = new Uint8Array(analyzer.fftSize);
+
+        source.connect(analyzer);
+
+        const threshold = 6; // lower = more sensitive
+
+        const tick = () => {
+            if(!analyzer) return;
+
+            analyzer.getByteTimeDomainData(dataArray);
+
+            // RMS amplitude
+            let sum = 0;
+            for(let i=0; i<dataArray.length; i++){
+                const v = (dataArray[i] - 128)/128;
+                sum += v*v;
+            }
+
+            const rms = Math.sqrt(sum/dataArray.length);
+            const level = rms * 100;
+
+            const floor = 0.01; // silence
+            const ceil = 0.12;  // "loud enough"
+
+            let amp = (rms-floor) / (ceil-floor);
+            amp = clamp01(amp);
+            amp = shape(amp);
+
+            smoothedBot = follow(smoothedBot, amp, attackBot, releaseBot);
+            smoothedTop = follow(smoothedTop, amp, attackTop, releaseTop);
+
+            const now = performance.now();
+            const dt = (now - t0) / 1000;
+            t0 = now;
+
+            let breath = 0;
+            if(amp < breathFloor){
+                const s = (Math.sin(2*Math.PI * breathSpeed * now / 1000) + 1) / 2;
+                breath = s * breathAmount;
+            }
+
+            const botBase = connected ? 0.42 : 0.0;
+            const botMax = 0.95;
+            const topMax = 0.95;
+
+            let botOpacity = botBase + smoothedBot * (botMax - botBase) + breath * 1.2;
+            let topOpacity = (smoothedTop > 0.02)
+                ? (smoothedTop * topMax + breath * 0.25)
+                : 0;
+
+            botOpacity = clamp01(botOpacity);
+            topOpacity = clamp01(topOpacity);
+
+            setRingOpacities(topOpacity, botOpacity);
+
+            /*if (level > threshold) lastHotTime = now;
+
+            const playing = (now - lastHotTime) < speakHoldMs;
+
+            if(playing !== audioPlaying){
+                audioPlaying = playing;
+                renderRings();
+            }*/
+
+            rafId = requestAnimationFrame(tick);
+        };
+
+        lastHotTime = performance.now();
+        tick();
+    };
+
+    // Data channel for sending events (text prompts, response.create, etc.) :contentReference[oaicite:5]{index=5}
+    dc = pc.createDataChannel('oai-events');
+
+    dc.onopen = () => console.log("dc open");
+    dc.onclose = () => console.log("dc closed");
+
+    dc.onmessage = (e) => {
+        console.log(e.data)
+        try{ console.log(JSON.parse(e.data).type); } catch {}
+    }
+    dc.addEventListener('open', () => log('Data channel open.', true));
+    dc.addEventListener('message', (e) => handleServerEvent(e.data));
+
+    // Mic
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micTrack = localStream.getAudioTracks()[0];
+    micTrack.enabled = false; // push-to-talk; start muted
+    pc.addTrack(micTrack, localStream);
+
+    // Create SDP offer and send to your server
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    const form = new FormData();
+    form.append('sdp', offer.sdp);
+
+    //const answerSdp = await fetch('/api/realtime', { method: 'POST', body: form }).then(r => r.text());
+    const resp = await fetch('/api/realtime', {
+        method: 'POST',
+        body: form
+    });
+    const answerSdp = await resp.text();
+
+    console.log("realtime status: ", resp.status);
+    console.log("sdp head:", JSON.stringify(answerSdp.slice(0,200)));
+
+    if(!answerSdp.startsWith("v=0")){
+        throw new Error("Not SDP. Server returned: " + answerSdp.slice(0,200));
+    }
+
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+    connected = true;
+    btnDisconnect.disabled = false;
+    btnHold.disabled = false;
+    btnSend.disabled = false;
+    btnConnect.disabled = true;
+
+    setRingOpacities(0, 0.55);
+    setState('listening');
+    log('Connected. Hold-to-talk enabled.', true);
+}
+
+function disconnect() {
+    connected = false;
+    btnDisconnect.disabled = true;
+    btnHold.disabled = true;
+    btnSend.disabled = true;
+    btnConnect.disabled = false;
+
+    try { micTrack && (micTrack.enabled = false); } catch {}
+    try { dc && dc.close(); } catch {}
+    try { pc && pc.close(); } catch {}
+    try { localStream && localStream.getTracks().forEach(t => t.stop()); } catch {}
+
+    try{ if(rafId) cancelAnimationFrame(rafId);} catch {}
+
+    rafId = null;
+    analyzer = null;
+    dataArray = null;
+    audioPlaying = false;
+
+    try{ audioCtx && audioCtx.close(); } catch {}
+    audioCtx = null;
+    renderRings();
+    setRingOpacities(0,0);
+
+    //setState('idle');
+    log('Disconnected.', true);
+}
+
+// Minimal event handling: when we request a response, the model will stream events.
+// We flip rings to "speaking" while a response is in progress.
+
+let awaitingResponse = false;
+function requestResponse(){
+    awaitingResponse = true;
+    setState('listening');
+}
+function handleServerEvent(raw) {
+    let evt;
+    try { evt = JSON.parse(raw); } catch { return; }
+
+    switch (evt.type){
+        case "response.created":
+            modelSpeaking = true;
+            break;
+
+        case "response.done":
+            modelSpeaking = false;
+            break;
+
+        case "output_audio_buffer.cleared":
+            audioPlaying = false;
+            renderRings()
+            break;
+    }
+}
+
+// Send a text prompt through the data channel as a conversation item, then request a response. :contentReference[oaicite:7]{index=7}
+function sendText(text) {
+    if (!dc || dc.readyState !== 'open') return;
+    log('You: ' + text);
+
+    const msgEvent = {
+        type: "conversation.item.create",
+        item: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text }]
+        }
+    };
+    dc.send(JSON.stringify(msgEvent));
+
+    const respEvent = {
+        type: "response.create",
+        response: { output_modalities: ["text","audio"] }
+    };
+    dc.send(JSON.stringify(respEvent));
+}
+
+// Push-to-talk: enable mic track only while holding
+function startTalking() {
+    if (!connected) return;
+    micTrack.enabled = true;
+    log('…listening', true);
+}
+function stopTalking() {
+    if (!connected) return;
+    micTrack.enabled = false;
+    // Ask the model to respond after user stops talking
+    const respEvent = {
+        type: "response.create",
+        response: { output_modalities: ["audio","text"] }
+    };
+    dc.send(JSON.stringify(respEvent));
+}
+
+btnConnect.onclick = connect;
+btnDisconnect.onclick = disconnect;
+
+// Hold-to-talk (mouse + touch)
+btnHold.addEventListener('mousedown', startTalking);
+btnHold.addEventListener('mouseup', stopTalking);
+btnHold.addEventListener('mouseleave', () => { if (micTrack?.enabled) stopTalking(); });
+btnHold.addEventListener('touchstart', (e) => { e.preventDefault(); startTalking(); }, { passive:false });
+btnHold.addEventListener('touchend', (e) => { e.preventDefault(); stopTalking(); }, { passive:false });
+
+btnSend.onclick = () => {
+    const t = textEl.value.trim();
+    if (!t) return;
+    textEl.value = '';
+    sendText(t);
+};
+textEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnSend.click(); });
+
+setState('idle');
+log('Load the page, click Connect.', true);
