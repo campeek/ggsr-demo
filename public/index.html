@@ -57,6 +57,23 @@
     let lastHotTime = 0;
     let rafId = null;
 
+    let smoothed = 0;
+    const attack = 0.35;
+    const release = 0.08;
+
+    function clamp01(x){
+        return Math.max(0, Math.min(1,x));
+    }
+
+    function shape(x){
+        return Math.pow(x, 0.6);
+    }
+
+    function setRingOpacities(top, bot){
+        curatorEl.style.setProperty('--topOpacity', top.toFixed(3));
+        curatorEl.style.setProperty('--botOpacity', bot.toFixed(3));
+    }
+
     function renderRings(){
         if(!connected) return setState("idle");
         if(audioPlaying) return setState("speaking");
@@ -134,6 +151,24 @@
                 const rms = Math.sqrt(sum/dataArray.length);
                 const level = rms * 100;
 
+                const floor = 0.01;
+                const ceil = 0.12;
+                let amp = (rms-floor) / (ceil-floor);
+                amp = clamp01(amp);
+                amp = shape(amp);
+
+                const k = (amp > smoothed) ? attack : release;
+                smoothed = smoothed + (amp - smoothed) * k;
+
+                const botBase = connected ? 0.55 : 0.0;
+                const botMax = 0.95;
+                const topMax = 0.95;
+
+                const top = smoothed * topMax;
+                const bot = clamp01(botBase + smoothed * (botMax - botBase));
+
+                setRingOpacities(top, bot);
+
                 const now = performance.now();
                 if (level > threshold) lastHotTime = now;
 
@@ -199,6 +234,7 @@
         btnSend.disabled = false;
         btnConnect.disabled = true;
 
+        setRingOpacities(0, 0.55);
         setState('listening');
         log('Connected. Hold-to-talk enabled.', true);
     }
@@ -225,6 +261,7 @@
         try{ audioCtx && audioCtx.close(); } catch {}
         audioCtx = null;
         renderRings();
+        setRingOpacities(0,0);
 
         //setState('idle');
         log('Disconnected.', true);

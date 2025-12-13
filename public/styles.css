@@ -56,6 +56,9 @@ body {
     place-items: center;
     gap: 10px;
     padding: 18px;
+
+    --topOpacity: 0;
+    --botOpacity: 0.95;
 }
 
 .rings {
@@ -68,28 +71,12 @@ body {
     fill: none;
     stroke: var(--ring);
     stroke-width: 10;
-    transition: opacity 220ms ease;
-    opacity: 0;
+    transition: opacity 90ms linear;
 }
 
 /* State mapping */
-.curator.idle .top,
-.curator.idle .bot {
-    opacity: 0;
-}
-
-.curator.speaking .top,
-.curator.speaking .bot {
-    opacity: 0.95;
-}
-
-.curator.listening .top {
-    opacity: 0;
-}
-
-.curator.listening .bot {
-    opacity: 0.95;
-}
+.ring.top { opacity: var(--topOpacity); }
+.ring.bot { opacity: var(--botOpacity); }
 
 .status {
     color: var(--muted);
