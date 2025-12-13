@@ -12,9 +12,51 @@
     <div class="stage">
         <div id="curator" class="curator idle">
             <svg class="rings" viewBox="0 0 800 520">
-                <ellipse class="ring top" cx="400" cy="200" rx="265" ry="75"/>
-                <ellipse class="ring bot" cx="400" cy="340" rx="265" ry="75"/>
+                <defs>
+                    <!-- Outer glow -->
+                    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+                        <feGaussianBlur stdDeviation="3.2" result="blur"/>
+                        <feMerge>
+                            <feMergeNode in="blur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+
+                    <!-- Bevel-ish stroke gradient -->
+                    <linearGradient id="bevelStroke" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="rgba(255,255,255,0.92)"/>
+                        <stop offset="55%" stop-color="rgba(255,255,255,0.45)"/>
+                        <stop offset="100%" stop-color="rgba(255,255,255,0.18)"/>
+                    </linearGradient>
+
+                    <!-- Secondary highlight gradient -->
+                    <linearGradient id="edgeHighlight" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stop-color="rgba(255,255,255,0.08)"/>
+                        <stop offset="50%" stop-color="rgba(255,255,255,0.30)"/>
+                        <stop offset="100%" stop-color="rgba(255,255,255,0.08)"/>
+                    </linearGradient>
+                </defs>
+
+                <!-- TOP RING GROUP -->
+                <g class="ringGroup topGroup" filter="url(#glow)">
+                    <!-- main thin ring -->
+                    <ellipse class="ring top" cx="400" cy="210" rx="285" ry="62"/>
+
+                    <!-- inner rim / bevel suggestion (slightly smaller, slightly offset) -->
+                    <ellipse class="rim topRim" cx="400" cy="214" rx="272" ry="56"/>
+
+                    <!-- edge highlight (same size, thin stroke) -->
+                    <ellipse class="edge topEdge" cx="400" cy="208" rx="285" ry="62"/>
+                </g>
+
+                <!-- BOTTOM RING GROUP -->
+                <g class="ringGroup botGroup" filter="url(#glow)">
+                    <ellipse class="ring bot" cx="400" cy="330" rx="305" ry="70"/>
+                    <ellipse class="rim botRim" cx="400" cy="334" rx="292" ry="64"/>
+                    <ellipse class="edge botEdge" cx="400" cy="328" rx="305" ry="70"/>
+                </g>
             </svg>
+
             <div id="status" class="muted">Idle</div>
         </div>
     </div>
@@ -34,6 +76,7 @@
         </div>
     </div>
 </div>
+
 
 <script>
     const curatorEl = document.getElementById('curator');

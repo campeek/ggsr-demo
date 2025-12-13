@@ -69,14 +69,36 @@ body {
 
 .ring {
     fill: none;
-    stroke: var(--ring);
-    stroke-width: 10;
+    stroke: url(#bevelStroke);
+    stroke-width: 6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
     transition: opacity 90ms linear;
+}
+
+.rim {
+    fill: none;
+    stroke: rgba(255,255,255,0.22);
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.7;
+}
+
+.edge {
+    fill: none;
+    stroke: url(#edgeHighlight);
+    stroke-width: 2;
+    opacity: 0.85;
 }
 
 /* State mapping */
 .ring.top { opacity: var(--topOpacity); }
 .ring.bot { opacity: var(--botOpacity); }
+
+/* Let bevel parts follow the ring, but not as strongly */
+.topRim, .topEdge { opacity: calc(var(--topOpacity) * 0.55); }
+.botRim, .botEdge { opacity: calc(var(--botOpacity) * 0.55); }
 
 .status {
     color: var(--muted);
