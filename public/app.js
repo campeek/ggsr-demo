@@ -8,6 +8,8 @@ const btnHold = document.getElementById('hold');
 const btnSend = document.getElementById('send');
 const textEl = document.getElementById('text');
 
+const holdSurface = document.getElementById('curator');
+
 let pc, dc, localStream, micTrack, audioEl;
 let connected = false;
 
@@ -318,6 +320,9 @@ function sendText(text) {
 
 // Push-to-talk: enable mic track only while holding
 function startTalking() {
+    if(audioCtx && audioCtx.state === "suspended"){
+        audioCtx.resume();
+    }
     if (!connected) return;
     micTrack.enabled = true;
     log('…listening', true);
@@ -337,11 +342,34 @@ btnConnect.onclick = connect;
 btnDisconnect.onclick = disconnect;
 
 // Hold-to-talk (mouse + touch)
-btnHold.addEventListener('mousedown', startTalking);
+/*btnHold.addEventListener('mousedown', startTalking);
 btnHold.addEventListener('mouseup', stopTalking);
 btnHold.addEventListener('mouseleave', () => { if (micTrack?.enabled) stopTalking(); });
 btnHold.addEventListener('touchstart', (e) => { e.preventDefault(); startTalking(); }, { passive:false });
 btnHold.addEventListener('touchend', (e) => { e.preventDefault(); stopTalking(); }, { passive:false });
+*/
+
+let holding = false;
+function holdStart(e) {
+    if(!connected || !micTrack) return;
+
+    e.preventDefault();
+    holding = true;
+    startTalking();
+}
+
+function holdEnd(e){
+    if(!holding) return;
+
+    e.preventDefault();
+    holding = false;
+    stopTalking();
+}
+
+holdSurface.addEventListener('pointerdown', holdStart);
+holdSurface.addEventListener('pointerup', holdEnd);
+holdSurface.addEventListener('pointercancel', holdEnd);
+holdSurface.addEventListener('pointerleave', holdEnd);
 
 btnSend.onclick = () => {
     const t = textEl.value.trim();
@@ -353,3 +381,9 @@ textEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnSend.click
 
 setState('idle');
 log('Load the page, click Connect.', true);
+
+window.addEventListener('load', () => {
+    connect().catch(err => {
+        console.error("Autoconnect failed: ", err);
+    });
+});
