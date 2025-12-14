@@ -60,6 +60,8 @@ app.post('/api/realtime', upload.none(), async (req, res)=>{
     }
 })
 
+app.get('/health', (req, res) => res.status(200).send('ok'));
+
 app.listen(process.env.PORT || 3000, () => {
     console.log(`http://localhost:${process.env.PORT || 3000}`);
 });
