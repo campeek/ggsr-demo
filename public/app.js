@@ -380,7 +380,6 @@ btnSend.onclick = () => {
 textEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnSend.click(); });
 
 setState('idle');
-log('Load the page, click Connect.', true);
 
 window.addEventListener('load', () => {
     connect().catch(err => {
