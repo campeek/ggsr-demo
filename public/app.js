@@ -17,14 +17,8 @@ let modelSpeaking = false;
 let audioPlaying = false;
 
 let audioCtx, analyzer, dataArray;
-let speakHoldMs = 250;
 let lastHotTime = 0;
 let rafId = null;
-
-/*let smoothed = 0;
-const attack = 0.35;
-const release = 0.08;
- */
 
 let smoothedBot = 0;
 let smoothedTop = 0;
@@ -170,16 +164,6 @@ async function connect() {
             topOpacity = clamp01(topOpacity);
 
             setRingOpacities(topOpacity, botOpacity);
-
-            /*if (level > threshold) lastHotTime = now;
-
-            const playing = (now - lastHotTime) < speakHoldMs;
-
-            if(playing !== audioPlaying){
-                audioPlaying = playing;
-                renderRings();
-            }*/
-
             rafId = requestAnimationFrame(tick);
         };
 
@@ -271,11 +255,6 @@ function disconnect() {
 // Minimal event handling: when we request a response, the model will stream events.
 // We flip rings to "speaking" while a response is in progress.
 
-let awaitingResponse = false;
-function requestResponse(){
-    awaitingResponse = true;
-    setState('listening');
-}
 function handleServerEvent(raw) {
     let evt;
     try { evt = JSON.parse(raw); } catch { return; }
@@ -340,14 +319,6 @@ function stopTalking() {
 
 btnConnect.onclick = connect;
 btnDisconnect.onclick = disconnect;
-
-// Hold-to-talk (mouse + touch)
-/*btnHold.addEventListener('mousedown', startTalking);
-btnHold.addEventListener('mouseup', stopTalking);
-btnHold.addEventListener('mouseleave', () => { if (micTrack?.enabled) stopTalking(); });
-btnHold.addEventListener('touchstart', (e) => { e.preventDefault(); startTalking(); }, { passive:false });
-btnHold.addEventListener('touchend', (e) => { e.preventDefault(); stopTalking(); }, { passive:false });
-*/
 
 let holding = false;
 function holdStart(e) {
